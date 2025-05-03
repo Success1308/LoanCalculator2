@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loan Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-light: #f0f4f8;
+      --bg-dark: #2c3e50;
+      --text-light: #333;
+      --text-dark: #ecf0f1;
+      --card-bg-light: #ffffff;
+      --card-bg-dark: #34495e;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg-light);
+      margin: 0;
+      padding: 40px;
+      color: var(--text-light);
+      transition: background 0.3s, color 0.3s;
+    }
+    body.dark {
+      background: var(--bg-dark);
+      color: var(--text-dark);
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: var(--card-bg-light);
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+      transition: background 0.3s;
+    }
+    body.dark .container {
+      background: var(--card-bg-dark);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      color: inherit;
+    }
+    input, button, select {
+      padding: 12px;
+      margin: 10px 0;
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #3498db;
+      color: white;
+      font-weight: bold;
+      transition: background 0.3s ease;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .summary {
+      background-color: #ecf0f1;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+    .dark .summary {
+      background-color: #2c3e50;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+    }
+    th, td {
+      border: 1px solid #bdc3c7;
+      padding: 12px;
+      text-align: center;
+      font-size: 14px;
+    }
+    th {
+      background-color: #2980b9;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .download-btn {
+      margin-top: 20px;
+      background-color: #27ae60;
+    }
+    .download-btn:hover {
+      background-color: #1e8449;
+    }
+    .error {
+      color: red;
+      font-size: 14px;
+      margin-top: -8px;
+    }
+    #chartContainer {
+      margin-top: 40px;
+    }
+    .toggle-theme {
+      float: right;
+      margin-bottom: 10px;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 15px;
+    }
+    .advanced-options {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="toggle-theme" onclick="toggleTheme()">Toggle Dark Mode</button>
+    <h1>Loan Calculator</h1>
+    <div>
+      <label for="loanAmount">Loan Amount</label>
+      <input type="number" id="loanAmount" placeholder="Loan Amount" min="0" />
+      <div id="loanAmountError" class="error"></div>
+
+      <label for="tenure">Tenure (months)</label>
+      <input type="number" id="tenure" placeholder="Tenure (months)" min="1" />
+      <div id="tenureError" class="error"></div>
+
+      <label for="interestRate">Interest Rate (Annual %)</label>
+      <input type="number" id="interestRate" placeholder="Interest Rate (Annual %)" step="0.01" min="0.01" />
+      <div id="interestRateError" class="error"></div>
+
+      <label for="startDate">Loan Start Date (auto-calculate schedule till end)</label>
+      <input type="date" id="startDate" placeholder="Start Date" />
+      <div id="startDateError" class="error"></div>
+
+      <label for="prepayment">Prepayment Amount (optional)</label>
+      <input type="number" id="prepayment" placeholder="Prepayment Amount (optional)" min="0" />
+
+      <button onclick="toggleAdvancedOptions()">Advanced Options</button>
+
+      <div class="advanced-options">
+        <label for="prepaymentImpact">Prepayment Impact</label>
+        <select id="prepaymentImpact">
+          <option value="emi">Reduce EMI</option>
+          <option value="tenure">Reduce Tenure</option>
+        </select>
+
+        <label for="gracePeriod">Grace Period (Months, Interest-Only Payments)</label>
+        <input type="number" id="gracePeriod" placeholder="Grace Period (Months)" min="0" />
+      </div>
+
+      <button onclick="calculateLoan()">Calculate</button>
+      <button class="download-btn" onclick="downloadPDF()">Download PDF</button>
+    </div>
+    <div class="summary" id="summary"></div>
+    <canvas id="chart" width="800" height="400"></canvas>
+    <table id="schedule">
+      <thead>
+        <tr>
+          <th>EMI No.</th>
+          <th>Date</th>
+          <th>Principal</th>
+          <th>Interest</th>
+          <th>Remaining Principal</th>
+          <th>Prepayment</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+    }
+
+    function toggleAdvancedOptions() {
+      const advancedOptions = document.querySelector('.advanced-options');
+      advancedOptions.style.display = advancedOptions.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function clearErrors() {
+      ['loanAmountError', 'tenureError', 'interestRateError', 'startDateError'].forEach(id => {
+        document.getElementById(id).innerText = '';
+      });
+    }
+
+    function calculateLoan() {
+      clearErrors();
+      const loanAmount = parseFloat(document.getElementById('loanAmount').value);
+      const tenure = parseInt(document.getElementById('tenure').value);
+      const annualRate = parseFloat(document.getElementById('interestRate').value);
+      const startDateValue = document.getElementById('startDate').value;
+      const prepayment = parseFloat(document.getElementById('prepayment').value) || 0;
+      const prepaymentImpact = document.getElementById('prepaymentImpact').value;
+      const gracePeriod = parseInt(document.getElementById('gracePeriod').value) || 0;
+      let hasError = false;
+
+      if (!loanAmount || loanAmount <= 0) {
+        document.getElementById('loanAmountError').innerText = 'Enter a valid loan amount';
+        hasError = true;
+      }
+      if (!tenure || tenure <= 0) {
+        document.getElementById('tenureError').innerText = 'Enter a valid tenure';
+        hasError = true;
+      }
+      if (!annualRate || annualRate <= 0) {
+        document.getElementById('interestRateError').innerText = 'Enter a valid interest rate';
+        hasError = true;
+      }
+      if (!startDateValue) {
+        document.getElementById('startDateError').innerText = 'Select a valid start date';
+        hasError = true;
+      }
+
+      if (hasError) return;
+
+      const startDate = new Date(startDateValue);
+      const monthlyRate = annualRate / 12 / 100;
+      const emi = loanAmount * monthlyRate * Math.pow(1 + monthlyRate, tenure) / (Math.pow(1 + monthlyRate, tenure) - 1);
+
+      let balance = loanAmount;
+      let totalInterest = 0;
+      const tbody = document.querySelector('#schedule tbody');
+      tbody.innerHTML = '';
+
+      const chartLabels = [];
+      const principalData = [];
+      const interestData = [];
+      const remainingBalanceData = [];
+      const prepaymentDates = [];
+
+      for (let i = 1; i <= tenure; i++) {
+        if (i <= gracePeriod) {
+          totalInterest += balance * monthlyRate;
+          balance -= 0;  // Interest-only payments
+        } else {
+          const interest = balance * monthlyRate;
+          const principal = Math.min(emi - interest, balance);
+          totalInterest += interest;
+          let prepayAmount = 0;
+          if (i === 1 && prepayment > 0) {
+            prepayAmount = Math.min(prepayment, balance - principal);
+            balance -= prepayAmount;
+            prepaymentDates.push({ emi: i, prepayment: prepayAmount });
+          }
+          balance -= principal;
+
+          const emiDate = new Date(startDate);
+          emiDate.setMonth(startDate.getMonth() + i - 1);
+          const yyyy = emiDate.getFullYear();
+          const mm = String(emiDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(emiDate.getDate()).padStart(2, '0');
+          const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+          const row = `<tr>
+            <td>${i}</td>
+            <td>${formattedDate}</td>
+            <td>${principal.toFixed(2)}</td>
+            <td>${interest.toFixed(2)}</td>
+            <td>${Math.max(balance, 0).toFixed(2)}</td>
+            <td>${prepayAmount > 0 ? prepayAmount.toFixed(2) : '-'}</td>
+          </tr>`;
+
+          tbody.innerHTML += row;
+
+          chartLabels.push(`EMI ${i}`);
+          principalData.push(principal.toFixed(2));
+          interestData.push(interest.toFixed(2));
+          remainingBalanceData.push(Math.max(balance, 0).toFixed(2));
+
+          if (balance <= 0.01) break;
+        }
+      }
+
+      document.getElementById('summary').innerHTML = `
+        Monthly EMI: <strong>${emi.toFixed(2)}</strong><br>
+        Total Interest: <strong>${totalInterest.toFixed(2)}</strong><br>
+        Total Repayment: <strong>${(emi * tenure + prepayment).toFixed(2)}</strong>
+      `;
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (window.chartInstance) window.chartInstance.destroy();
+      window.chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: chartLabels,
+          datasets: [
+            {
+              label: 'Principal',
+              data: principalData,
+              backgroundColor: '#2ecc71'
+            },
+            {
+              label: 'Interest',
+              data: interestData,
+              backgroundColor: '#e74c3c'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'top'
+            },
+            title: {
+              display: true,
+              text: 'EMI Breakdown (Principal vs Interest)'
+            }
+          }
+        }
+      });
+
+      // Add more visualizations if needed
+    }
+
+    function downloadPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(16);
+      doc.text('Loan Amortization Schedule', 10, 10);
+
+      const summaryText = document.getElementById('summary').innerText.split('\n');
+      summaryText.forEach((line, idx) => {
+        doc.text(line, 10, 20 + idx * 10);
+      });
+
+      doc.autoTable({
+        html: '#schedule',
+        startY: 50,
+        theme: 'grid',
+        headStyles: { fillColor: [41, 128, 185] }
+      });
+
+      doc.save('Loan_Amortization_Schedule.pdf');
+    }
+  </script>
+</body>
+</html>
